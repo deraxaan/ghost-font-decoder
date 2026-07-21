@@ -24,8 +24,7 @@ It's a small, self-contained computer vision experiment, not a
 production OCR system. See [Results & Limitations](#results--limitations)
 for an honest account of what does and doesn't work.
 
-
-https://github.com/user-attachments/assets/ebfc32a8-71a8-4394-ad4a-898a40929f05
+https://github.com/user-attachments/assets/137d2142-b002-47da-9597-7ae2fc78f461
 
 
 ## Background: why this breaks frame-based approaches
