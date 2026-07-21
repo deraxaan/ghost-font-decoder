@@ -24,6 +24,10 @@ It's a small, self-contained computer vision experiment, not a
 production OCR system. See [Results & Limitations](#results--limitations)
 for an honest account of what does and doesn't work.
 
+
+https://github.com/user-attachments/assets/ebfc32a8-71a8-4394-ad4a-898a40929f05
+
+
 ## Background: why this breaks frame-based approaches
 
 Ghost Font encodes a message as a dense field of small dots:
