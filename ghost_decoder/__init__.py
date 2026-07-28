@@ -19,7 +19,7 @@ from .motion import (
     reconstruct_best_window,
 )
 from .text_bands import crop_to_content, find_text_line_bands
-from .ocr import decode_message, HAS_TESSERACT
+from .ocr import decode_message, HAS_TESSERACT, tesseract_engine_available
 
 __all__ = [
     "load_dot_frames",
@@ -32,6 +32,7 @@ __all__ = [
     "find_text_line_bands",
     "decode_message",
     "HAS_TESSERACT",
+    "tesseract_engine_available",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.8.0"

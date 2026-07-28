@@ -2,8 +2,8 @@
 
 **Recovering motion-hidden text from "Ghost Font" videos using per-frame motion classification instead of single-frame image analysis.**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
+![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
+![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
 
 ---
 
@@ -23,9 +23,6 @@ for a static pattern.
 It's a small, self-contained computer vision experiment, not a
 production OCR system. See [Results & Limitations](#results--limitations)
 for an honest account of what does and doesn't work.
-
-https://github.com/user-attachments/assets/137d2142-b002-47da-9597-7ae2fc78f461
-
 
 ## Background: why this breaks frame-based approaches
 
@@ -147,44 +144,44 @@ simple vote, and the most consistent reading wins.
 ## Architecture / Pipeline
 
 ```
-                       ┌─────────────────────┐
-                       │   Input video (.mp4) │
-                       └──────────┬───────────┘
-                                  │
-                     load_dot_frames()   [io_utils.py]
-                     grayscale + threshold → binary dot masks
-                                  │
-                                  ▼
-              ┌───────────────────────────────────┐
-              │ auto_detect_speed() or --speed N   │  [motion.py]
-              └──────────────────┬──────────────────┘
-                                  │
-                     classify_message_dots()        [motion.py]
-                 per-frame up-shift vs down-shift comparison
-                                  │
-                                  ▼
-                     filter_noisy_frames()           [motion.py]
-                   drop frames with abnormal dot counts
-                                  │
-                                  ▼
-              build_density_for_window() × N windows [motion.py]
-             local wraparound-safe alignment + stacking
-                                  │
-                                  ▼
-                     find_text_line_bands()        [text_bands.py]
-                  smoothed row-density valley detection
-                                  │
-                                  ▼
-                     ocr_density_region()                [ocr.py]
-              Gaussian blur (continuous) → Otsu → Tesseract
-                                  │
-                                  ▼
-                     decode_message()                    [ocr.py]
-                vote across windows/lines → final string
-                                  │
-                                  ▼
-                       "HELLO HUMAN"  (stdout)
-                    + ghost_message_clean.png (preview)
+          ┌─────────────────────┐
+          │   Input video (.mp4) │
+          └──────────┬───────────┘
+                      │
+        load_dot_frames()   [io_utils.py]
+        grayscale + threshold → binary dot masks
+                      │
+                      ▼
+ ┌───────────────────────────────────┐
+ │ auto_detect_speed() or --speed N   │  [motion.py]
+ └──────────────────┬──────────────────┘
+                     │
+        classify_message_dots()        [motion.py]
+    per-frame up-shift vs down-shift comparison
+                     │
+                     ▼
+        filter_noisy_frames()           [motion.py]
+      drop frames with abnormal dot counts
+                     │
+                     ▼
+ build_density_for_window() × N windows [motion.py]
+local wraparound-safe alignment + stacking
+                     │
+                     ▼
+        find_text_line_bands()        [text_bands.py]
+     smoothed row-density valley detection
+                     │
+                     ▼
+        ocr_density_region()                [ocr.py]
+ Gaussian blur (continuous) → Otsu → Tesseract
+                     │
+                     ▼
+        decode_message()                    [ocr.py]
+   vote across windows/lines → final string
+                     │
+                     ▼
+          "HELLO HUMAN"  (stdout)
+       + ghost_message_clean.png (preview)
 ```
 
 ## Requirements
@@ -207,7 +204,7 @@ pytesseract>=0.3.10
 
 ## Installation
 
-```bash
+```
 git clone https://github.com/DeraXaan/ghost-font-decoder.git
 cd ghost-font-decoder
 python -m venv .venv && source .venv/bin/activate   # optional but recommended
@@ -216,7 +213,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-```bash
+```
 # If you know the dot speed (pixels/frame):
 python decode.py path/to/video.mp4 --speed 4
 
@@ -229,14 +226,14 @@ python decode.py path/to/video.mp4 --speed 4 --out result.png --window 40
 
 ### CLI options
 
-| Flag           | Description                                             | Default                    |
-|----------------|------------------------------------------------------------|-----------------------------|
-| `video`        | Path to the input video (positional, required)             | —                           |
-| `--speed`      | Known dot speed in px/frame                                 | `None`                      |
-| `--auto-speed` | Estimate dot speed automatically (searches 1–10 px/frame)  | off                         |
-| `--thresh`     | Grayscale threshold for dot detection (0–255)               | `127`                       |
-| `--window`     | Local alignment window size, in frames                      | `30`                        |
-| `--out`        | Path to save the human-viewable preview PNG                 | `ghost_message_clean.png`   |
+| Flag           | Description                                               | Default                   |
+| -------------- | ----------------------------------------------------------| -------------------------- |
+| `video`        | Path to the input video (positional, required)            | —                         |
+| `--speed`      | Known dot speed in px/frame                                | `None`                    |
+| `--auto-speed` | Estimate dot speed automatically (searches 1–10 px/frame)  | off                       |
+| `--thresh`     | Grayscale threshold for dot detection (0–255)              | `127`                     |
+| `--window`     | Local alignment window size, in frames                     | `30`                      |
+| `--out`        | Path to save the human-viewable preview PNG                | `ghost_message_clean.png` |
 
 ### Library usage
 
@@ -283,10 +280,10 @@ Decoded message: HELLO HUMAN
 
 ## Demo
 
-> _Placeholder — add a short screen recording or GIF of the CLI running
+> *Placeholder — add a short screen recording or GIF of the CLI running
 > end-to-end, plus a side-by-side of a raw noisy frame vs. the final
 > reconstruction. A raw-frame → density-map → OCR-result comparison image
-> here does more to explain the project than any amount of text._
+> here does more to explain the project than any amount of text.*
 
 - `docs/assets/demo.gif` — CLI run, start to finish
 - `docs/assets/input-frame-example.png` — single raw frame (looks like noise)
@@ -344,14 +341,14 @@ ghost-font-decoder/
 ├── ghost_decoder/
 │   ├── __init__.py            # public API exports
 │   ├── io_utils.py            # video loading → binary dot masks
-│   ├── motion.py              # speed estimation, classification, alignment
-│   ├── text_bands.py          # text-line segmentation
-│   ├── ocr.py                 # blur→threshold→OCR, multi-window voting
-│   └── cli.py                 # argument parsing, pipeline orchestration
+│   ├── motion.py               # speed estimation, classification, alignment
+│   ├── text_bands.py           # text-line segmentation
+│   ├── ocr.py                  # blur→threshold→OCR, multi-window voting
+│   └── cli.py                  # argument parsing, pipeline orchestration
 ├── examples/
-│   └── README.md              # how to get/use sample videos (not checked in)
+│   └── README.md               # how to get/use sample videos (not checked in)
 ├── docs/
-│   └── assets/                # demo images/GIFs (placeholders)
+│   └── assets/                 # demo images/GIFs (placeholders)
 ├── requirements.txt
 ├── LICENSE
 ├── CONTRIBUTING.md

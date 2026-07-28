@@ -9,6 +9,9 @@ blobby, disconnected shapes that OCR engines don't recognize as letters.
 
 from __future__ import annotations
 
+import os
+import shutil
+import sys
 from typing import Dict, List, Optional, Sequence, Tuple
 
 import cv2
@@ -25,8 +28,47 @@ try:
 except ImportError:
     HAS_TESSERACT = False
 
+# On Windows, the Tesseract installer does not reliably add itself to
+# PATH (and other tools on the system can silently break PATH resolution
+# entirely). If `tesseract` isn't already resolvable, fall back to
+# checking the installer's default locations directly, so a working
+# install still works even when PATH doesn't cooperate.
+if HAS_TESSERACT and sys.platform == "win32" and shutil.which("tesseract") is None:
+    for _candidate in (
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ):
+        if os.path.isfile(_candidate):
+            pytesseract.pytesseract.tesseract_cmd = _candidate
+            break
 
-DEFAULT_SIGMAS = (7, 9, 11, 13, 15)
+
+def tesseract_engine_available() -> bool:
+    """Check whether the actual Tesseract OCR engine binary is reachable.
+
+    ``HAS_TESSERACT`` only confirms that the *Python wrapper* package
+    (``pytesseract``) imported successfully -- ``pip install pytesseract``
+    does not install the underlying OCR engine itself, which is a
+    separate program that must be installed independently and be on
+    PATH. Without this check, a missing engine binary silently causes
+    every OCR attempt deep in :func:`ocr_density_region` to fail and
+    return an empty string, which looks identical to "the image just
+    wasn't readable" -- this function lets callers catch the real cause
+    up front instead.
+
+    Returns:
+        ``True`` if OCR calls should actually be able to run.
+    """
+    if not HAS_TESSERACT:
+        return False
+    try:
+        pytesseract.get_tesseract_version()
+        return True
+    except Exception:
+        return False
+
+
+DEFAULT_SIGMAS = (7, 9, 11)
 MIN_TEXT_LENGTH = 4
 
 
@@ -81,7 +123,7 @@ def ocr_density_region(
         upscaled = cv2.resize(tight, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC)
 
         try:
-            for psm in (8, 7, 6):
+            for psm in (7, 8):
                 raw = pytesseract.image_to_string(upscaled, config=f"--psm {psm}").strip()
                 letters_only = "".join(c for c in raw if c.isalpha())
                 if letters_only:
@@ -101,6 +143,7 @@ def decode_message(
     speed: float,
     window_size: int = 30,
     stride: int = 8,
+    debug: bool = False,
 ) -> Optional[str]:
     """Decode the full hidden message by scanning multiple alignment windows.
 
@@ -122,6 +165,10 @@ def decode_message(
         speed: Dot speed in pixels/frame.
         window_size: Frame-count span of each alignment window.
         stride: Step size (in ``good_idx`` positions) between windows.
+        debug: If ``True``, print each window's band count and every
+            line/whole-block OCR attempt (including ones too short or
+            empty to be registered) to help diagnose why decoding is
+            failing on a particular video.
 
     Returns:
         The winning decoded string (e.g. ``"HELLO HUMAN"``), or ``None``
@@ -129,6 +176,8 @@ def decode_message(
     """
     votes: Dict[str, int] = {}
     display_text: Dict[str, str] = {}
+    windows_tried = 0
+    windows_with_density = 0
 
     def register(text: str, weight: int) -> None:
         if not text:
@@ -142,20 +191,58 @@ def decode_message(
             display_text[signature] = text
 
     for start in range(0, max(1, len(good_idx) - 1), stride):
+        windows_tried += 1
         density = build_density_for_window(masks, good_idx, speed, start, window_size)
         if density is None:
+            if debug:
+                print(f"[debug] window start={start}: no density (too few good frames)")
             continue
+        windows_with_density += 1
 
         bands = find_text_line_bands(density)
+        if debug:
+            print(f"[debug] window start={start}: {len(bands)} band(s) -> {bands}")
+
+        line_split_succeeded = False
         if len(bands) >= 2:
             line_texts = [ocr_density_region(density[y0:y1, :]) for (y0, y1) in bands]
+            if debug:
+                print(f"[debug]   per-line OCR: {line_texts}")
             combined = " ".join(t for t in line_texts if t)
             if combined and len(combined.replace(" ", "")) >= MIN_TEXT_LENGTH:
                 register(combined, weight=3)
+                line_split_succeeded = True
+            elif debug:
+                print(f"[debug]   combined line text too short/empty: {combined!r}")
 
-        whole_text = ocr_density_region(density, sigmas=(9, 13))
-        if whole_text and len(whole_text) >= MIN_TEXT_LENGTH:
-            register(whole_text, weight=1)
+        # The whole-block fallback exists for messages with no detectable
+        # line gap. When line-split already produced a usable result, it's
+        # both lower-priority (weight 1 vs. 3) and, empirically, far more
+        # likely to be garbage anyway -- skip the extra Tesseract calls.
+        if not line_split_succeeded:
+            whole_text = ocr_density_region(density, sigmas=(9, 13))
+            if debug:
+                print(f"[debug]   whole-block OCR: {whole_text!r}")
+            if whole_text and len(whole_text) >= MIN_TEXT_LENGTH:
+                register(whole_text, weight=1)
+
+        # Once one candidate has a decisive lead (multiple independent
+        # windows agreeing via line-split), further windows are very
+        # unlikely to change the outcome -- stop early rather than
+        # exhausting every remaining window for no benefit.
+        if votes:
+            top_signature, top_weight = max(votes.items(), key=lambda kv: kv[1])
+            if top_weight >= 9:  # three independent line-split confirmations
+                if debug:
+                    print(
+                        f"[debug] early stop: {top_signature!r} confirmed "
+                        f"with weight {top_weight} after {windows_tried} window(s)"
+                    )
+                break
+
+    if debug:
+        print(f"[debug] {windows_with_density}/{windows_tried} windows had usable density")
+        print(f"[debug] final votes: {votes}")
 
     if not votes:
         return None

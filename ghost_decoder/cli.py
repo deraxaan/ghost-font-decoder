@@ -16,7 +16,7 @@ from .motion import (
     filter_noisy_frames,
     reconstruct_best_window,
 )
-from .ocr import HAS_TESSERACT, decode_message
+from .ocr import HAS_TESSERACT, decode_message, tesseract_engine_available
 from .text_bands import crop_to_content
 
 
@@ -46,6 +46,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--out", default="ghost_message_clean.png",
         help="Path to save the human-viewable reconstruction PNG.",
     )
+    parser.add_argument(
+        "--debug", action="store_true",
+        help="Print per-window band detection and OCR attempts to diagnose "
+             "why decoding might be failing on a specific video.",
+    )
     return parser
 
 
@@ -58,13 +63,30 @@ def main(argv: list[str] | None = None) -> int:
 
     if not HAS_TESSERACT:
         print(
-            "error: pytesseract is not installed, or the Tesseract OCR engine "
-            "binary is not on PATH.\n"
-            "  pip install pytesseract\n"
-            "  # plus the engine itself:\n"
-            "  #   Ubuntu/Debian: sudo apt install tesseract-ocr\n"
-            "  #   macOS:         brew install tesseract\n"
-            "  #   Windows:       https://github.com/UB-Mannheim/tesseract/wiki",
+            "error: the 'pytesseract' Python package is not installed.\n"
+            "  pip install pytesseract",
+            file=sys.stderr,
+        )
+        return 1
+
+    if not tesseract_engine_available():
+        print(
+            "error: pytesseract is installed, but the Tesseract OCR *engine*\n"
+            "itself could not be found. 'pip install pytesseract' only installs\n"
+            "a Python wrapper -- the engine is a separate program.\n"
+            "\n"
+            "This was already checked against PATH and the default Windows\n"
+            "install locations:\n"
+            "  C:\\Program Files\\Tesseract-OCR\\tesseract.exe\n"
+            "  C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe\n"
+            "\n"
+            "If you installed it somewhere else, find tesseract.exe and add\n"
+            "these two lines near the top of ghost_decoder\\ocr.py (after the\n"
+            "'import pytesseract' line):\n"
+            "  pytesseract.pytesseract.tesseract_cmd = r'FULL_PATH_TO\\tesseract.exe'\n"
+            "\n"
+            "If it's not installed at all, get it from:\n"
+            "  https://github.com/UB-Mannheim/tesseract/wiki",
             file=sys.stderr,
         )
         return 1
@@ -93,12 +115,25 @@ def main(argv: list[str] | None = None) -> int:
     print("Reconstructing a preview image...")
     density = reconstruct_best_window(masks, good_idx, speed, window_size=args.window)
     if density is not None:
-        preview = 255 - (np.clip(density, 0, 1) * 255).astype(np.uint8)
+        # Blur the continuous density map before thresholding -- the same
+        # technique ocr.py already uses correctly for the actual OCR path.
+        # Skipping this (as the previous version did) leaves raw per-pixel
+        # density noise, which looks unreadable even when the underlying
+        # reconstruction is fine.
+        density_u8 = cv2.normalize(density, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
+        blurred = cv2.GaussianBlur(density_u8, (9, 9), 3)
+        _, thresholded = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        # After THRESH_OTSU, message pixels (higher density) end up as
+        # 255 and background as 0. Invert so the saved PNG follows the
+        # normal convention: dark text on a light background.
+        preview = 255 - thresholded
+
         cv2.imwrite(args.out, crop_to_content(preview, dark_thresh=128))
         print(f"Saved preview image to: {args.out}")
 
     print("Scanning alignment windows and voting on the OCR result...")
-    result = decode_message(masks, good_idx, speed, window_size=args.window)
+    result = decode_message(masks, good_idx, speed, window_size=args.window, debug=args.debug)
 
     print("\n=== RESULT ===")
     if result:

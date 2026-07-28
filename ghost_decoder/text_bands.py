@@ -9,23 +9,28 @@ import numpy.typing as npt
 
 
 def crop_to_content(
-    img: npt.NDArray[np.uint8], pad: int = 15, dark_thresh: int = 20
+    img: npt.NDArray[np.uint8], pad: int = 15, dark_thresh: int = 128
 ) -> npt.NDArray[np.uint8]:
-    """Crop an image to the bounding box of its dark (non-background) pixels.
+    """Crop an image to the bounding box of its dark (text) pixels.
+
+    Follows the normal convention used everywhere else in this project:
+    message text is dark, the background is light. Callers should pass
+    an image in that orientation directly -- no pre-inversion needed.
 
     Args:
-        img: Grayscale image where message content is dark.
+        img: Grayscale image where message content is dark and the
+            background is light (e.g. dark text on a white background).
         pad: Extra margin (pixels) to keep around the detected content.
-        dark_thresh: Pixel values above this are considered "content".
-            Note this expects dark content to have *higher* values in
-            the ``img > dark_thresh`` sense -- callers pass in the
-            inverted (message-dot-as-bright) representation.
+        dark_thresh: Pixels with a value below this are considered
+            "content" (text). Default of 128 works for images that have
+            already been hard-thresholded to pure black/white; lower it
+            for softer, non-binarized images.
 
     Returns:
         The cropped image, or the original image unchanged if no
         content pixels were found.
     """
-    dark = img > dark_thresh
+    dark = img < dark_thresh
     ys, xs = np.where(dark)
     if len(xs) == 0:
         return img
