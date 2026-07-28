@@ -2,8 +2,8 @@
 
 **Recovering motion-hidden text from "Ghost Font" videos using per-frame motion classification instead of single-frame image analysis.**
 
-![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
-![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 
 ---
 
@@ -23,6 +23,12 @@ for a static pattern.
 It's a small, self-contained computer vision experiment, not a
 production OCR system. See [Results & Limitations](#results--limitations)
 for an honest account of what does and doesn't work.
+
+
+
+https://github.com/user-attachments/assets/51731bcd-cd7a-4b2f-b20d-5ca110ecb36d
+
+
 
 ## Background: why this breaks frame-based approaches
 
@@ -128,7 +134,9 @@ than OCR-ing a multi-line block at once. This whole process (alignment →
 reconstruction → line split → OCR) is repeated across several different
 alignment windows spanning the clip, since some windows land on a
 cleaner "phase" of the dot pattern than others. Results are tallied by a
-simple vote, and the most consistent reading wins.
+simple vote, and the most consistent reading wins — and once one answer
+has been independently confirmed by several windows, remaining windows
+are skipped rather than scanned for no benefit.
 
 ## Core ideas
 
@@ -138,61 +146,65 @@ simple vote, and the most consistent reading wins.
 - Noisy/corrupted frame detection and filtering
 - Density-map reconstruction, blurred before thresholding
 - Automatic text-line segmentation
-- Multi-window OCR voting for reliability
+- Multi-window OCR voting for reliability, with early stopping once confident
 - Small, dependency-light, pure OpenCV/NumPy/Tesseract pipeline
 
 ## Architecture / Pipeline
 
 ```
-          ┌─────────────────────┐
-          │   Input video (.mp4) │
-          └──────────┬───────────┘
-                      │
-        load_dot_frames()   [io_utils.py]
-        grayscale + threshold → binary dot masks
-                      │
-                      ▼
- ┌───────────────────────────────────┐
- │ auto_detect_speed() or --speed N   │  [motion.py]
- └──────────────────┬──────────────────┘
-                     │
-        classify_message_dots()        [motion.py]
-    per-frame up-shift vs down-shift comparison
-                     │
-                     ▼
-        filter_noisy_frames()           [motion.py]
-      drop frames with abnormal dot counts
-                     │
-                     ▼
- build_density_for_window() × N windows [motion.py]
-local wraparound-safe alignment + stacking
-                     │
-                     ▼
-        find_text_line_bands()        [text_bands.py]
-     smoothed row-density valley detection
-                     │
-                     ▼
-        ocr_density_region()                [ocr.py]
- Gaussian blur (continuous) → Otsu → Tesseract
-                     │
-                     ▼
-        decode_message()                    [ocr.py]
-   vote across windows/lines → final string
-                     │
-                     ▼
-          "HELLO HUMAN"  (stdout)
-       + ghost_message_clean.png (preview)
+                       ┌─────────────────────┐
+                       │   Input video (.mp4) │
+                       └──────────┬───────────┘
+                                  │
+                     load_dot_frames()   [io_utils.py]
+                     grayscale + threshold → binary dot masks
+                                  │
+                                  ▼
+              ┌───────────────────────────────────┐
+              │ auto_detect_speed() or --speed N   │  [motion.py]
+              └──────────────────┬──────────────────┘
+                                  │
+                     classify_message_dots()        [motion.py]
+                 per-frame up-shift vs down-shift comparison
+                                  │
+                                  ▼
+                     filter_noisy_frames()           [motion.py]
+                   drop frames with abnormal dot counts
+                                  │
+                                  ▼
+              build_density_for_window() × N windows [motion.py]
+             local wraparound-safe alignment + stacking
+                                  │
+                                  ▼
+                     find_text_line_bands()        [text_bands.py]
+                  smoothed row-density valley detection
+                                  │
+                                  ▼
+                     ocr_density_region()                [ocr.py]
+              Gaussian blur (continuous) → Otsu → Tesseract
+                                  │
+                                  ▼
+                     decode_message()                    [ocr.py]
+                vote across windows/lines → final string
+                                  │
+                                  ▼
+                       "HELLO HUMAN"  (stdout)
+                    + ghost_message_clean.png (preview)
 ```
 
 ## Requirements
 
 - Python 3.10+
 - [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) engine
-  installed **system-wide** (the `pytesseract` package is only a Python
-  wrapper around it):
+  installed **system-wide**. This is easy to miss: `pytesseract` (the
+  Python package installed via `pip`) is only a *wrapper* around the
+  actual engine, which is a separate program you install independently:
   - Ubuntu/Debian: `sudo apt install tesseract-ocr`
   - macOS: `brew install tesseract`
   - Windows: [UB-Mannheim installer](https://github.com/UB-Mannheim/tesseract/wiki)
+    — installs by default to `C:\Program Files\Tesseract-OCR\`. The CLI
+    auto-detects this location even if it isn't on your PATH; see
+    [Troubleshooting](#troubleshooting) if it still isn't found.
 
 Python dependencies are listed in [`requirements.txt`](requirements.txt):
 
@@ -204,7 +216,7 @@ pytesseract>=0.3.10
 
 ## Installation
 
-```
+```bash
 git clone https://github.com/DeraXaan/ghost-font-decoder.git
 cd ghost-font-decoder
 python -m venv .venv && source .venv/bin/activate   # optional but recommended
@@ -213,7 +225,7 @@ pip install -r requirements.txt
 
 ## Usage
 
-```
+```bash
 # If you know the dot speed (pixels/frame):
 python decode.py path/to/video.mp4 --speed 4
 
@@ -222,18 +234,23 @@ python decode.py path/to/video.mp4 --auto-speed
 
 # Custom output path / alignment window size:
 python decode.py path/to/video.mp4 --speed 4 --out result.png --window 40
+
+# Print per-window band detection and OCR attempts (useful if decoding
+# fails on a video and you need to see exactly where it's breaking):
+python decode.py path/to/video.mp4 --auto-speed --debug
 ```
 
 ### CLI options
 
-| Flag           | Description                                               | Default                   |
-| -------------- | ----------------------------------------------------------| -------------------------- |
-| `video`        | Path to the input video (positional, required)            | —                         |
-| `--speed`      | Known dot speed in px/frame                                | `None`                    |
-| `--auto-speed` | Estimate dot speed automatically (searches 1–10 px/frame)  | off                       |
-| `--thresh`     | Grayscale threshold for dot detection (0–255)              | `127`                     |
-| `--window`     | Local alignment window size, in frames                     | `30`                      |
-| `--out`        | Path to save the human-viewable preview PNG                | `ghost_message_clean.png` |
+| Flag           | Description                                                 | Default                    |
+|----------------|--------------------------------------------------------------|-----------------------------|
+| `video`        | Path to the input video (positional, required)               | —                           |
+| `--speed`      | Known dot speed in px/frame                                   | `None`                      |
+| `--auto-speed` | Estimate dot speed automatically (searches 1–10 px/frame)    | off                         |
+| `--thresh`     | Grayscale threshold for dot detection (0–255)                 | `127`                       |
+| `--window`     | Local alignment window size, in frames                        | `30`                        |
+| `--out`        | Path to save the human-viewable preview PNG                   | `ghost_message_clean.png`   |
+| `--debug`      | Print per-window band detection and OCR attempts              | off                         |
 
 ### Library usage
 
@@ -280,14 +297,48 @@ Decoded message: HELLO HUMAN
 
 ## Demo
 
-> *Placeholder — add a short screen recording or GIF of the CLI running
-> end-to-end, plus a side-by-side of a raw noisy frame vs. the final
-> reconstruction. A raw-frame → density-map → OCR-result comparison image
-> here does more to explain the project than any amount of text.*
+A full end-to-end run is embedded at the top of this README. For a
+static side-by-side of a raw noisy frame vs. the final reconstruction:
 
-- `docs/assets/demo.gif` — CLI run, start to finish
 - `docs/assets/input-frame-example.png` — single raw frame (looks like noise)
 - `docs/assets/reconstructed-output.png` — final decoded image
+
+## Troubleshooting
+
+A few issues that are easy to hit on first setup, especially on Windows:
+
+- **`ModuleNotFoundError: No module named 'cv2'`, even after `pip install
+  -r requirements.txt` reports it's already satisfied.** This means
+  `pip` and `python` are resolving to two different Python installs.
+  Force them to match:
+  ```
+  python -m pip install -r requirements.txt
+  ```
+  If that doesn't fix it, check which `python` actually runs
+  (`Get-Command python` on Windows, `which python` elsewhere) — on
+  Windows specifically, watch for it resolving to the Microsoft Store
+  stub (a path containing `WindowsApps`) instead of your real install.
+
+- **"OCR could not confidently read the message" with no obvious
+  reason, or every per-line OCR attempt in `--debug` output comes back
+  as an empty string (`''`) rather than garbage text.** This almost
+  always means the Tesseract *engine* binary itself isn't reachable —
+  `pip install pytesseract` only installs the Python wrapper. The CLI
+  checks for this directly at startup and will tell you if this is the
+  cause; if it slips through, confirm with:
+  ```
+  tesseract --version
+  ```
+  and install the engine itself (see [Requirements](#requirements)) if
+  that fails.
+
+- **Multiple tools (Python version managers, other CLI installers,
+  etc.) fighting over your PATH**, causing `python`/`pip`/`tesseract` to
+  silently resolve to unexpected locations depending on install order.
+  Calling the intended executable by its full path
+  (e.g. `& "C:\Program Files\...\python.exe" decode.py ...`) sidesteps
+  this entirely and is a reliable way to confirm whether PATH is the
+  culprit.
 
 ## Results & Limitations
 
@@ -316,6 +367,14 @@ frames). Re-running the CLI produces the same result every time.
   needs a fairly clean, high-contrast letterform to succeed. Thinner
   fonts, smaller dot pitch, or lower-contrast source videos may need
   different blur/threshold parameters than the defaults.
+- **Runtime is dominated by OCR subprocess overhead, not the CV
+  pipeline.** Each OCR attempt launches a separate Tesseract process;
+  the motion classification and reconstruction stages are fast by
+  comparison. Multi-window voting stops early once a result is
+  confirmed by several independent windows, which keeps this bounded in
+  practice, but a from-scratch reimplementation using an in-process OCR
+  library (rather than a CLI-wrapped one) would likely be
+  meaningfully faster.
 
 The implementation intentionally favors interpretability over model
 complexity: every stage is a plain, inspectable function, which makes it
@@ -332,6 +391,9 @@ a reasonable baseline to compare future, more complex approaches against.
 - [ ] Compare the current heuristic (up/down shift comparison) against a
       small learned classifier, and benchmark robustness of each
 - [ ] Package as a proper CLI (`pip install`-able, console entry point)
+- [ ] Evaluate an in-process OCR backend (e.g. a neural OCR library)
+      alongside Tesseract, both for potential accuracy gains on noisier
+      input and to remove the per-call subprocess overhead
 
 ## Project Structure
 
@@ -341,14 +403,14 @@ ghost-font-decoder/
 ├── ghost_decoder/
 │   ├── __init__.py            # public API exports
 │   ├── io_utils.py            # video loading → binary dot masks
-│   ├── motion.py               # speed estimation, classification, alignment
-│   ├── text_bands.py           # text-line segmentation
-│   ├── ocr.py                  # blur→threshold→OCR, multi-window voting
-│   └── cli.py                  # argument parsing, pipeline orchestration
+│   ├── motion.py              # speed estimation, classification, alignment
+│   ├── text_bands.py          # text-line segmentation
+│   ├── ocr.py                 # blur→threshold→OCR, multi-window voting
+│   └── cli.py                 # argument parsing, pipeline orchestration
 ├── examples/
-│   └── README.md               # how to get/use sample videos (not checked in)
+│   └── README.md              # how to get/use sample videos (not checked in)
 ├── docs/
-│   └── assets/                 # demo images/GIFs (placeholders)
+│   └── assets/                # demo images/GIFs (placeholders)
 ├── requirements.txt
 ├── LICENSE
 ├── CONTRIBUTING.md
@@ -367,6 +429,13 @@ That's roughly the lesson: for problems like this, how you represent the
 data usually matters more than which model you throw at it afterward. A
 better OCR engine wouldn't have saved a bad reconstruction; a better
 reconstruction made an ordinary OCR engine sufficient.
+
+A second, smaller lesson from getting this running cross-platform:
+`pip install pytesseract` looks like a complete install but isn't — it's
+a wrapper around a separate system binary. Distinguishing "the Python
+package failed to import" from "the underlying engine can't be found"
+as two different failure modes (rather than one vague error) made
+diagnosing real-world setup issues far faster.
 
 ## Contributing
 
